@@ -1,6 +1,6 @@
 # Ring-Codec
 
-[![Build Status](https://travis-ci.org/ring-clojure/ring-codec.png?branch=master)](https://travis-ci.org/ring-clojure/ring-codec)
+[![Build Status](https://travis-ci.org/ring-clojure/ring-codec.svg?branch=master)](https://travis-ci.org/ring-clojure/ring-codec)
 
 Functions for encoding and decoding data into formats commonly used in
 web applications.
@@ -9,7 +9,7 @@ web applications.
 
 To install, add the following to your project `:dependencies`:
 
-    [ring/ring-codec "1.0.0"]
+    [ring/ring-codec "1.1.0"]
 
 ## Documentation
 
@@ -17,6 +17,6 @@ To install, add the following to your project `:dependencies`:
 
 ## License
 
-Copyright © 2013 James Reeves
+Copyright © 2017 James Reeves
 
 Distributed under the MIT License, the same as Ring.

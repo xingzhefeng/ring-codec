@@ -23,7 +23,7 @@
 (def ^:private string-replace-bug?
   (= "x" (str/replace "x" #"." (fn [x] "$0"))))
 
-(defmacro fix-string-replace-bug [x]
+(defmacro ^:no-doc fix-string-replace-bug [x]
   (if string-replace-bug?
     `(double-escape ~x)
     x))
@@ -31,13 +31,15 @@
 (defn percent-encode
   "Percent-encode every character in the given string using either the specified
   encoding, or UTF-8 by default."
-  [^String unencoded & [^String encoding]]
-  (->> (.getBytes unencoded (or encoding "UTF-8"))
-       (map (partial format "%%%02X"))
-       (str/join)))
+  ([unencoded]
+   (percent-encode unencoded "UTF-8"))
+  ([^String unencoded ^String encoding]
+   (->> (.getBytes unencoded encoding)
+        (map (partial format "%%%02X"))
+        (str/join))))
 
 (defn- parse-bytes [encoded-bytes]
-  (->> (re-seq #"%.." encoded-bytes)
+  (->> (re-seq #"%[A-Za-z0-9]{2}" encoded-bytes)
        (map #(subs % 1))
        (map #(.byteValue (Integer/valueOf % 16)))
        (byte-array)))
@@ -45,28 +47,34 @@
 (defn percent-decode
   "Decode every percent-encoded character in the given string using the
   specified encoding, or UTF-8 by default."
-  [^String encoded & [^String encoding]]
-  (str/replace encoded
-               #"(?:%..)+"
-               (fn [chars]
-                 (-> ^bytes (parse-bytes chars)
-                     (String. (or encoding "UTF-8"))
-                     (fix-string-replace-bug)))))
+  ([encoded]
+   (percent-decode encoded "UTF-8"))
+  ([^String encoded ^String encoding]
+   (str/replace encoded
+                #"(?:%[A-Za-z0-9]{2})+"
+                (fn [chars]
+                  (-> ^bytes (parse-bytes chars)
+                      (String. encoding)
+                      (fix-string-replace-bug))))))
 
 (defn url-encode
   "Returns the url-encoded version of the given string, using either a specified
   encoding or UTF-8 by default."
-  [unencoded & [encoding]]
-  (str/replace
+  ([unencoded]
+   (url-encode unencoded "UTF-8"))
+  ([unencoded encoding]
+   (str/replace
     unencoded
     #"[^A-Za-z0-9_~.+-]+"
-    #(double-escape (percent-encode % encoding))))
+    #(double-escape (percent-encode % encoding)))))
 
 (defn ^String url-decode
   "Returns the url-decoded version of the given string, using either a specified
   encoding or UTF-8 by default. If the encoding is invalid, nil is returned."
-  [encoded & [encoding]]
-  (percent-decode encoded encoding))
+  ([encoded]
+   (url-decode encoded "UTF-8"))
+  ([encoded encoding]
+   (percent-decode encoded encoding)))
 
 (defn base64-encode
   "Encode an array of bytes into a base64 encoded string."
@@ -78,7 +86,7 @@
   [^String encoded]
   (Base64/decodeBase64 (.getBytes encoded)))
 
-(defprotocol FormEncodeable
+(defprotocol ^:no-doc FormEncodeable
   (form-encode* [x encoding]))
 
 (extend-protocol FormEncodeable
@@ -88,44 +96,53 @@
   Map
   (form-encode* [params encoding]
     (letfn [(encode [x] (form-encode* x encoding))
-            (encode-param [[k v]] (str (encode (name k)) "=" (encode v)))]
+            (encode-param [k v] (str (encode (name k)) "=" (encode v)))]
       (->> params
            (mapcat
             (fn [[k v]]
-              (if (or (seq? v) (sequential? v) )
-                (map #(encode-param [k %]) v)
-                [(encode-param [k v])])))
+              (cond
+                (sequential? v) (map #(encode-param k %) v)
+                (set? v)        (sort (map #(encode-param k %) v))
+                :else           (list (encode-param k v)))))
            (str/join "&"))))
   Object
   (form-encode* [x encoding]
-    (form-encode* (str x) encoding)))
+    (form-encode* (str x) encoding))
+  nil
+  (form-encode* [x encoding] ""))
 
 (defn form-encode
   "Encode the supplied value into www-form-urlencoded format, often used in
   URL query strings and POST request bodies, using the specified encoding.
   If the encoding is not specified, it defaults to UTF-8"
-  [x & [encoding]]
-  (form-encode* x (or encoding "UTF-8")))
+  ([x]
+   (form-encode x "UTF-8"))
+  ([x encoding]
+   (form-encode* x encoding)))
 
 (defn form-decode-str
   "Decode the supplied www-form-urlencoded string using the specified encoding,
   or UTF-8 by default."
-  [^String encoded & [encoding]]
-  (try
-    (URLDecoder/decode encoded (or encoding "UTF-8"))
-    (catch Exception _ nil)))
+  ([encoded]
+   (form-decode-str encoded "UTF-8"))
+  ([^String encoded encoding]
+   (try
+     (URLDecoder/decode encoded encoding)
+     (catch Exception _ nil))))
 
 (defn form-decode
   "Decode the supplied www-form-urlencoded string using the specified encoding,
   or UTF-8 by default. If the encoded value is a string, a string is returned.
   If the encoded value is a map of parameters, a map is returned."
-  [^String encoded & [encoding]]
-  (if-not (.contains encoded "=")
-    (form-decode-str encoded encoding)
-    (reduce
-     (fn [m param]
-       (if-let [[k v] (str/split param #"=" 2)]
-         (assoc-conj m (form-decode-str k encoding) (form-decode-str v encoding))
-         m))
-     {}
-     (str/split encoded #"&"))))
+  ([encoded]
+   (form-decode encoded "UTF-8"))
+  ([^String encoded encoding]
+   (if-not (.contains encoded "=")
+     (form-decode-str encoded encoding)
+     (reduce
+      (fn [m param]
+        (if-let [[k v] (str/split param #"=" 2)]
+          (assoc-conj m (form-decode-str k encoding) (form-decode-str v encoding))
+          m))
+      {}
+      (str/split encoded #"&")))))
